@@ -19,6 +19,7 @@ public:
 
     void run();
     void stop();
+    void reset();
 
 private:
     Environment *environment;

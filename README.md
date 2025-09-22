@@ -9,6 +9,7 @@ The nodes are spun up in different threads to simulate concurrent operations. Th
 To run the simulation, first ensure you have CMake and MSVC installed. Then, follow these steps:
 
 ```bash
+git submodule update --init --recursive
 mkdir build && cd build
 cmake .. -G "Visual Studio 17 2022" -A x64
 cmake --build .

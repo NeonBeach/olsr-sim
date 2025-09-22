@@ -114,7 +114,7 @@ void Node::run()
 void Node::stop()
 {
     std::stringstream ss;
-    ss << "Node " << id << "\n";
+    ss << "\nNode " << id << " (final state)\n";
     ss << "nbr: ";
     for (const auto &nbr : neighbors)
         ss << nbr << " ";
@@ -127,4 +127,21 @@ void Node::stop()
     ss << "\n";
     LOG_DEBUG(ss.str());
     running = false;
+}
+
+// doesnt reset for new simulation (todo)
+void Node::reset()
+{
+    std::lock_guard<std::mutex> lock(inboxMutex);
+    while (!inbox.empty())
+        inbox.pop();
+    neighbors.clear();
+    multipoint_relays.clear();
+    ms.clear();
+    two_hop_neighbors.clear();
+    HELLO_seq_nums.clear();
+    TC_seq_nums.clear();
+    HELLO_seq_num = 0;
+    TC_seq_num = 0;
+    is_relay = false;
 }

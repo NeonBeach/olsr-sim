@@ -17,7 +17,6 @@ class Node;
  * @param payload Message content
  */
 
-
 /**
  * @brief Environment class simulating a network environment.
  * Manages nodes, their connections, and message passing
@@ -31,11 +30,22 @@ public:
     std::vector<Message> receiveMessages(int nodeId);
     bool waitForMessages(int nodeId, std::chrono::milliseconds timeout);
     std::vector<int> getNeighbors(int nodeId);
+    void reset()
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        nodes.clear();
+        adjacency.clear();
+        inboxes.clear();
+    }
+
+    int getNumNodes() const { return numNodes; }
+    void setNumNodes(int n) { numNodes = n; }
 
 private:
+    int numNodes = 0;
     std::unordered_map<int, Node *> nodes;
     std::unordered_map<int, std::vector<int>> adjacency;
     std::unordered_map<int, std::queue<Message>> inboxes;
-    std::mutex mtx;
+    mutable std::mutex mtx;
     std::condition_variable cv;
 };

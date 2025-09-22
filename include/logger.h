@@ -1,6 +1,5 @@
 #pragma once
 #include <iostream>
-#include <string>
 #include <thread>
 #include <mutex>
 #include <queue>
@@ -12,6 +11,7 @@
 #include <fstream>
 #include <memory>
 #include <ctime>
+#include <functional>
 
 enum class LogLevel
 {
@@ -20,6 +20,15 @@ enum class LogLevel
     WARNING,
     ERROR
 };
+
+enum class LogOutput
+{
+    CONSOLE = 1,
+    FILE = 2,
+    IMGUI = 4
+};
+
+using LogCallback = std::function<void(const std::string &, LogLevel)>;
 
 class Logger
 {
@@ -30,14 +39,14 @@ public:
         return instance;
     }
 
-    void init(bool toConsole = true, const std::string &logFile = "")
+    void init(int outputFlags = static_cast<int>(LogOutput::CONSOLE),
+              const std::string &logFile = "")
     {
         std::lock_guard<std::mutex> lock(logMutex);
-        this->logToConsole = toConsole;
+        this->outputFlags = outputFlags;
 
-        if (!logFile.empty())
+        if (!logFile.empty() && (outputFlags & static_cast<int>(LogOutput::FILE)))
         {
-            logToFile = true;
             logFilePath = logFile;
             logFileStream.open(logFile, std::ios::out | std::ios::app);
         }
@@ -75,28 +84,48 @@ public:
         std::stringstream ss;
         ss << "[" << std::put_time(&tm_buf, "%H:%M:%S") << "] ";
 
-        switch (level)
+        if (outputFlags & static_cast<int>(LogOutput::CONSOLE))
         {
-        case LogLevel::DEBUG:
-            ss << "\033[36m[DEBUG]\033[0m ";
-            break;
-        case LogLevel::INFO:
-            ss << "\033[32m[INFO]\033[0m ";
-            break;
-        case LogLevel::WARNING:
-            ss << "\033[33m[WARNING]\033[0m ";
-            break;
-        case LogLevel::ERROR:
-            ss << "\033[31m[ERROR]\033[0m ";
-            break;
+            switch (level)
+            {
+            case LogLevel::DEBUG:
+                ss << "\033[36m[DEBUG]\033[0m ";
+                break;
+            case LogLevel::INFO:
+                ss << "\033[32m[INFO]\033[0m ";
+                break;
+            case LogLevel::WARNING:
+                ss << "\033[33m[WARNING]\033[0m ";
+                break;
+            case LogLevel::ERROR:
+                ss << "\033[31m[ERROR]\033[0m ";
+                break;
+            }
+        }
+        else
+        {
+            switch (level)
+            {
+            case LogLevel::DEBUG:
+                ss << "[DEBUG] ";
+                break;
+            case LogLevel::INFO:
+                ss << "[INFO] ";
+                break;
+            case LogLevel::WARNING:
+                ss << "[WARNING] ";
+                break;
+            case LogLevel::ERROR:
+                ss << "[ERROR] ";
+                break;
+            }
         }
 
-        // ss << "[Thread " << std::this_thread::get_id() << "] ";
         ss << message;
 
         {
             std::lock_guard<std::mutex> lock(logMutex);
-            logQueue.push(ss.str());
+            logQueue.push({ss.str(), level});
         }
         cv.notify_one();
     }
@@ -121,6 +150,13 @@ public:
         log(LogLevel::ERROR, message);
     }
 
+public:
+    void setCallback(LogCallback callback)
+    {
+        std::lock_guard<std::mutex> lock(logMutex);
+        imguiCallback = callback;
+    }
+
 private:
     Logger() = default;
     ~Logger()
@@ -133,6 +169,12 @@ private:
     Logger(Logger &&) = delete;
     Logger &operator=(Logger &&) = delete;
 
+    struct LogMessage
+    {
+        std::string text;
+        LogLevel level;
+    };
+
     void loggerWorker()
     {
         std::unique_lock<std::mutex> lock(logMutex);
@@ -143,20 +185,25 @@ private:
 
             while (!logQueue.empty())
             {
-                std::string message = logQueue.front();
+                LogMessage message = logQueue.front();
                 logQueue.pop();
 
                 lock.unlock();
 
-                if (logToConsole)
+                if (outputFlags & static_cast<int>(LogOutput::CONSOLE))
                 {
-                    std::cout << message << std::endl;
+                    std::cout << message.text << std::endl;
                 }
 
-                if (logToFile && logFileStream.is_open())
+                if ((outputFlags & static_cast<int>(LogOutput::FILE)) && logFileStream.is_open())
                 {
-                    logFileStream << message << std::endl;
+                    logFileStream << message.text << std::endl;
                     logFileStream.flush();
+                }
+
+                if ((outputFlags & static_cast<int>(LogOutput::IMGUI)) && imguiCallback)
+                {
+                    imguiCallback(message.text, message.level);
                 }
 
                 lock.lock();
@@ -166,12 +213,12 @@ private:
 
     std::mutex logMutex;
     std::condition_variable cv;
-    std::queue<std::string> logQueue;
+    std::queue<LogMessage> logQueue;
     std::atomic<bool> done{false};
     std::thread workerThread;
+    LogCallback imguiCallback;
 
-    bool logToConsole{true};
-    bool logToFile{false};
+    int outputFlags{static_cast<int>(LogOutput::CONSOLE)};
     std::string logFilePath;
     std::ofstream logFileStream;
 };
