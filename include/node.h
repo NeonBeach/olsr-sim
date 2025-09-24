@@ -20,11 +20,13 @@ public:
     void run();
     void stop();
     void reset();
+    bool isRelay() const;
 
 private:
     Environment *environment;
     std::queue<Message> inbox;
     std::mutex inboxMutex;
+    mutable std::mutex relayMutex;
     bool running = true;
     bool is_relay = false;
 

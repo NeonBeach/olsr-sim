@@ -68,4 +68,8 @@ private:
     bool networkLoaded = false;
     bool topologyCalculated = false;
     bool simulationRunning = false;
+
+    int draggedNodeId = -1;
+    ImVec2 dragOffset = ImVec2(0, 0);
+    bool isDragging = false;
 };

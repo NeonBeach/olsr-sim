@@ -246,7 +246,7 @@ void App::renderControlPanel()
         }
     }
     ImGui::Separator();
-
+    ImGui::TextDisabled("To restart the simulation, restart the application.");
     ImGui::End();
 }
 
@@ -261,7 +261,7 @@ void App::renderTopology()
             topologyCalculated = false;
         }
 
-        static int iterations = 50;
+        static int iterations = 100;
         ImGui::SameLine();
         ImGui::PushItemWidth(100);
         if (ImGui::InputInt("Iterations", &iterations, 5, 10))
@@ -270,6 +270,20 @@ void App::renderTopology()
                 iterations = 1;
             if (iterations > 200)
                 iterations = 200;
+            topologyCalculated = false;
+        }
+        ImGui::PopItemWidth();
+        ImGui::SameLine();
+        ImGui::Dummy(ImVec2(10, 0));
+        ImGui::SameLine();
+        static float k = 8.0f;
+        ImGui::PushItemWidth(100);
+        if (ImGui::InputFloat("k", &k, 1.0f, 5.0f))
+        {
+            if (k < 0.0f)
+                k = 0.0f;
+            if (k > 100.0f)
+                k = 100.0f;
             topologyCalculated = false;
         }
         ImGui::PopItemWidth();
@@ -287,7 +301,7 @@ void App::renderTopology()
             topologyDetails.adjacencyList = adjacency;
 
             // Get normalized positions from Fruchterman-Reingold algorithm
-            topologyDetails.normalized_positions = Graphs::fruchterman_reingold(topologyDetails.adjacencyList);
+            topologyDetails.normalized_positions = Graphs::fruchterman_reingold(topologyDetails.adjacencyList, iterations, k);
         }
 
         const ImVec2 canvas_pos = ImVec2(cursor.x + 40, cursor.y + 40);
@@ -326,8 +340,14 @@ void App::renderTopology()
         {
             const float node_radius = 22.0f;
 
+            auto color = IM_COL32(80, 220, 120, 255);
+            if (nodes[i]->isRelay())
+            {
+                color = IM_COL32(220, 120, 80, 255);
+            }
+
             // Draw node background
-            draw_list->AddCircleFilled(node_positions[i], node_radius, IM_COL32(80, 220, 120, 255));
+            draw_list->AddCircleFilled(node_positions[i], node_radius, color, 0);
 
             // Draw node outline
             draw_list->AddCircle(node_positions[i], node_radius, IM_COL32(0, 0, 0, 255), 0, 2.0f);
@@ -344,25 +364,86 @@ void App::renderTopology()
 
         // Add interaction capabilities - dragging nodes
         ImGui::InvisibleButton("canvas", canvas_size);
-        if (ImGui::IsItemHovered())
-        {
-            // Optionally: Add tooltip when hovering over the graph
-            ImGui::SetTooltip("Network topology visualization");
 
-            // Optionally: Add node selection on click
-            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+        // Handle mouse interactions
+        ImVec2 mouse_pos = ImGui::GetMousePos();
+        bool mouse_clicked = ImGui::IsMouseClicked(ImGuiMouseButton_Left);
+        bool mouse_down = ImGui::IsMouseDown(ImGuiMouseButton_Left);
+        bool mouse_released = ImGui::IsMouseReleased(ImGuiMouseButton_Left);
+
+        // Start dragging
+        if (mouse_clicked && ImGui::IsItemHovered())
+        {
+            for (int i = 0; i < node_count && i < node_positions.size(); ++i)
             {
-                ImVec2 mouse_pos = ImGui::GetMousePos();
-                for (int i = 0; i < node_count && i < node_positions.size(); ++i)
+                float dist_x = mouse_pos.x - node_positions[i].x;
+                float dist_y = mouse_pos.y - node_positions[i].y;
+                if (dist_x * dist_x + dist_y * dist_y < 22.0f * 22.0f)
                 {
-                    float dist_x = mouse_pos.x - node_positions[i].x;
-                    float dist_y = mouse_pos.y - node_positions[i].y;
-                    if (dist_x * dist_x + dist_y * dist_y < 22.0f * 22.0f)
-                    {
-                        // Node clicked - could set a selectedNode variable here
-                        break;
-                    }
+                    draggedNodeId = i;
+                    isDragging = true;
+                    dragOffset = ImVec2(dist_x, dist_y);
+                    break;
                 }
+            }
+        }
+
+        // Continue dragging
+        if (isDragging && mouse_down && draggedNodeId >= 0)
+        {
+            // Update the normalized position based on mouse position
+            float new_x = (mouse_pos.x - dragOffset.x - canvas_pos.x) / display_w;
+            float new_y = (mouse_pos.y - dragOffset.y - canvas_pos.y) / display_h;
+
+            // Convert back from [0,1] to [-1,1] range (undo the +1)*0.5 transformation)
+            new_x = new_x * 2.0f - 1.0f;
+            new_y = new_y * 2.0f - 1.0f;
+
+            // Clamp to reasonable bounds
+            new_x = std::max(-1.0f, std::min(1.0f, new_x));
+            new_y = std::max(-1.0f, std::min(1.0f, new_y));
+
+            // Update the stored position
+            topologyDetails.normalized_positions[draggedNodeId].first = new_x;
+            topologyDetails.normalized_positions[draggedNodeId].second = new_y;
+        }
+
+        // End dragging
+        if (mouse_released)
+        {
+            isDragging = false;
+            draggedNodeId = -1;
+        }
+
+        // Show tooltip when hovering
+        if (ImGui::IsItemHovered() && !isDragging)
+        {
+            // Check if hovering over a specific node
+            int hoveredNode = -1;
+            for (int i = 0; i < node_count && i < node_positions.size(); ++i)
+            {
+                float dist_x = mouse_pos.x - node_positions[i].x;
+                float dist_y = mouse_pos.y - node_positions[i].y;
+                if (dist_x * dist_x + dist_y * dist_y < 22.0f * 22.0f)
+                {
+                    hoveredNode = i;
+                    break;
+                }
+            }
+
+            if (hoveredNode >= 0)
+            {
+                std::string tooltip = "Node " + std::to_string(hoveredNode);
+                if (nodes[hoveredNode]->isRelay())
+                {
+                    tooltip += " (Relay)";
+                }
+                tooltip += "\nClick and drag to move";
+                ImGui::SetTooltip("%s", tooltip.c_str());
+            }
+            else
+            {
+                ImGui::SetTooltip("Network topology visualization\nDrag nodes to rearrange");
             }
         }
     }
@@ -472,8 +553,19 @@ void App::renderEventLog()
             }
 
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::ColorConvertFloat4ToU32(color));
-            ImGui::TextUnformatted(entry.message.c_str());
-            ImGui::PopStyleColor();
+            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));        // Transparent selection
+            ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.3f, 0.3f, 0.3f, 0.3f)); // Light selection on hover
+            ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.4f, 0.4f, 0.4f, 0.4f));  // Light selection when active
+
+            if (ImGui::Selectable(entry.message.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick))
+            {
+                if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+                {
+                    ImGui::SetClipboardText(entry.message.c_str());
+                }
+            }
+
+            ImGui::PopStyleColor(4);
         }
 
         if (eventLogParams.AutoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
@@ -494,6 +586,8 @@ void App::handleLogMessage(const std::string &message, LogLevel level)
 
 void App::cleanup()
 {
+    stopSimulation();
+
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();

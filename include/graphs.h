@@ -14,7 +14,7 @@ namespace Graphs
     inline std::vector<Point2D> fruchterman_reingold(
         const AdjacencyList &graph,
         int iterations = 50,
-        float k = 40.0f,
+        float k = 1.0f,
         float initialTemp = 5.0f,
         float epsilon = 0.01f)
     {

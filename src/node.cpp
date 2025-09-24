@@ -90,10 +90,10 @@ void Node::run()
                 two_hops_covered[two_hop] = 1;
         }
 
-        if (!ms.empty())
-            is_relay = true;
-        else
-            is_relay = false;
+        {
+            std::lock_guard<std::mutex> lock(relayMutex);
+            is_relay = !ms.empty();
+        }
 
         auto currentTime = std::chrono::steady_clock::now();
         if (currentTime - lastHelloTime >= HELLO_INTERVAL)
@@ -143,5 +143,14 @@ void Node::reset()
     TC_seq_nums.clear();
     HELLO_seq_num = 0;
     TC_seq_num = 0;
-    is_relay = false;
+    {
+        std::lock_guard<std::mutex> relayLock(relayMutex);
+        is_relay = false;
+    }
+}
+
+bool Node::isRelay() const
+{
+    std::lock_guard<std::mutex> lock(relayMutex);
+    return is_relay;
 }
